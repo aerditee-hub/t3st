@@ -1,0 +1,2647 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Simple Room — First Person / Editor</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #1a1410; font-family: 'Segoe UI', sans-serif; }
+  canvas { display: block; }
+  #hint { position: absolute; top: 12px; left: 12px; color: #f0dcc0; font-family: sans-serif; font-size: 12px; background: rgba(0,0,0,0.45); padding: 8px 12px; border-radius: 4px; }
+  #crosshair {
+    position: absolute; top: 50%; left: 50%; width: 6px; height: 6px;
+    margin: -3px 0 0 -3px; border-radius: 50%;
+    background: rgba(255,240,220,0.85); pointer-events: none;
+  }
+
+  /* ---------------- Editor UI ---------------- */
+  #modeToggle {
+    position: absolute; top: 12px; right: 12px;
+    background: rgba(28,20,15,0.85); color: #f0dcc0;
+    border: 1px solid #6b4a2a; padding: 8px 14px; border-radius: 6px;
+    font-size: 13px; cursor: pointer; z-index: 20; letter-spacing: 0.02em;
+  }
+  #modeToggle:hover { background: rgba(60,40,25,0.9); }
+
+  #editorPanel {
+    position: absolute; top: 0; right: 0; height: 100%; width: 300px;
+    background: rgba(24,17,12,0.94); color: #f0dcc0;
+    border-left: 1px solid #6b4a2a; box-sizing: border-box;
+    padding: 18px; overflow-y: auto; display: none; z-index: 15;
+    font-size: 13px;
+  }
+  #editorPanel.open { display: block; }
+  #editorPanel h2 { font-size: 15px; margin: 0 0 4px; color: #ffcf8f; letter-spacing: 0.03em; }
+  #editorPanel .sub { color: #b89a78; margin: 0 0 16px; font-size: 11px; }
+  #editorPanel section { margin-bottom: 18px; border-top: 1px solid #45311d; padding-top: 14px; }
+  #editorPanel section:first-of-type { border-top: none; padding-top: 0; }
+  #editorPanel label { display: block; margin: 10px 0 4px; color: #cbab84; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+  #editorPanel input[type=range] { width: 100%; accent-color: #d68a3f; }
+  #editorPanel input[type=file] { width: 100%; font-size: 11px; color: #cbab84; }
+  #editorPanel .row3 { display: flex; gap: 6px; }
+  #editorPanel .row3 > div { flex: 1; }
+  #editorPanel .row3 input[type=number] {
+    width: 100%; box-sizing: border-box; background: #201811; color: #f0dcc0;
+    border: 1px solid #4a3320; border-radius: 4px; padding: 5px 4px; font-size: 12px;
+  }
+  #editorPanel .valTag { float: right; color: #d68a3f; font-weight: 600; }
+  #editorPanel button {
+    background: #3a2818; color: #f0dcc0; border: 1px solid #6b4a2a;
+    border-radius: 5px; padding: 7px 10px; font-size: 12px; cursor: pointer; width: 100%;
+    margin-top: 6px;
+  }
+  #editorPanel button:hover { background: #4a3420; }
+  #editorPanel button.danger { border-color: #8c3f3f; color: #ffb0b0; }
+  #editorPanel button.danger:hover { background: #4a2020; }
+  #objList { max-height: 140px; overflow-y: auto; border: 1px solid #45311d; border-radius: 4px; }
+  #objList .objItem {
+    padding: 6px 8px; cursor: pointer; border-bottom: 1px solid #2c2016; font-size: 12px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  #objList .objItem:last-child { border-bottom: none; }
+  #objList .objItem.selected { background: #3a2818; color: #ffcf8f; }
+  #objList .objItem:hover { background: #2c2016; }
+  #gizmoBtns { display: flex; gap: 6px; }
+  #gizmoBtns button { flex: 1; margin-top: 0; }
+  #gizmoBtns button.active { background: #d68a3f; color: #221408; border-color: #d68a3f; }
+  #collisionBtns button { flex: 1; margin-top: 0; }
+  #collisionBtns button.active { background: #d68a3f; color: #221408; border-color: #d68a3f; }
+  #dropHint {
+    position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    background: rgba(20,14,9,0.55); color: #ffcf8f; font-size: 22px; z-index: 25;
+    border: 3px dashed #d68a3f; margin: 20px; border-radius: 12px; pointer-events: none;
+  }
+  #dropHint.show { display: flex; }
+  #editorHint {
+    position: absolute; bottom: 12px; left: 12px; color: #f0dcc0; font-family: sans-serif; font-size: 12px;
+    background: rgba(0,0,0,0.45); padding: 8px 12px; border-radius: 4px; z-index: 10; display: none;
+  }
+  #editorHint.show { display: block; }
+
+  /* ===================== JARVIS HUD ===================== */
+  #jarvisPanel {
+    position: absolute;
+    top: 50%;
+    left: -340px;
+    transform: translateY(-50%);
+    width: 300px;
+    max-height: 70vh;
+    background: linear-gradient(160deg, rgba(6,18,28,0.88), rgba(4,10,18,0.92));
+    border: 1px solid rgba(80,200,255,0.5);
+    border-radius: 10px;
+    box-shadow: 0 0 24px rgba(40,180,255,0.25), inset 0 0 30px rgba(0,140,255,0.06);
+    padding: 14px 16px 16px;
+    z-index: 50;
+    font-family: 'Consolas', 'Courier New', monospace;
+    color: #bfefff;
+    transition: left 0.5s cubic-bezier(.2,.8,.2,1), box-shadow 0.4s ease;
+    overflow: hidden;
+  }
+  #jarvisPanel.active {
+    left: 16px;
+    box-shadow: 0 0 34px rgba(60,200,255,0.45), inset 0 0 30px rgba(0,160,255,0.1);
+  }
+  #jarvisHeader {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(80,200,255,0.3);
+  }
+  #jarvisDot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: #2a5a70;
+    box-shadow: 0 0 6px rgba(60,200,255,0.4);
+    transition: background 0.3s, box-shadow 0.3s;
+    flex-shrink: 0;
+  }
+  #jarvisPanel.listening #jarvisDot {
+    background: #ff5555;
+    box-shadow: 0 0 10px rgba(255,80,80,0.8);
+    animation: jarvisPulse 1s infinite;
+  }
+  #jarvisPanel.active #jarvisDot {
+    background: #4de3ff;
+    box-shadow: 0 0 10px rgba(80,220,255,0.8);
+  }
+  @keyframes jarvisPulse {
+    0%,100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+  #jarvisTitle {
+    font-size: 13px;
+    letter-spacing: 0.12em;
+    font-weight: 600;
+    color: #7fe0ff;
+    text-shadow: 0 0 8px rgba(80,200,255,0.5);
+  }
+  #jarvisStatus {
+    font-size: 11px;
+    color: #6fa8c0;
+    letter-spacing: 0.03em;
+    margin-bottom: 10px;
+    min-height: 14px;
+  }
+  #jarvisQuestion {
+    font-size: 12px;
+    color: #8fd8ff;
+    opacity: 0.85;
+    margin-bottom: 8px;
+    font-style: italic;
+    line-height: 1.4;
+    min-height: 0;
+  }
+  #jarvisAnswer {
+    font-size: 13px;
+    color: #e4f9ff;
+    line-height: 1.5;
+    max-height: 45vh;
+    overflow-y: auto;
+    text-shadow: 0 0 6px rgba(80,200,255,0.15);
+  }
+  #jarvisAnswer::-webkit-scrollbar { width: 4px; }
+  #jarvisAnswer::-webkit-scrollbar-thumb { background: rgba(80,200,255,0.4); border-radius: 2px; }
+  /* =================== /JARVIS HUD ===================== */
+</style>
+</head>
+<body>
+
+<!-- ===================== JARVIS HUD ===================== -->
+<div id="jarvisPanel">
+  <div id="jarvisHeader">
+    <span id="jarvisDot"></span>
+    <span id="jarvisTitle">J.A.R.V.I.S.</span>
+  </div>
+  <div id="jarvisStatus">Say &ldquo;Hey Jarvis&rdquo; to activate</div>
+  <div id="jarvisQuestion"></div>
+  <div id="jarvisAnswer"></div>
+</div>
+<!-- =================== /JARVIS HUD ===================== -->
+
+<div id="hint">Click to look around &middot; WASD to move &middot; Esc to release mouse</div>
+<div id="editorHint">Drag a .glb or video file anywhere, or use "Import GLB" / "Add Video Screen" &middot; WASD to move around &middot; Click an object to select it &middot; E/R to switch Rotate / Scale (W also selects Move) &middot; drag gizmo arrows to transform &middot; Solid / Walk Through controls collision in Walk Mode</div>
+<div id="crosshair"></div>
+<div id="dropHint">Drop your .glb model or video file here</div>
+<button id="modeToggle">Enter Editor Mode</button>
+
+<div id="editorPanel">
+  <section>
+    <h2>Editor Mode</h2>
+    <p class="sub">Import a GLB model, then move, rotate, scale, and light it.</p>
+    <label>Import GLB</label>
+    <input type="file" id="glbInput" accept=".glb,.gltf">
+
+    <label style="margin-top:14px">Video Screen</label>
+    <button id="addVideoBtn">+ Add Video Screen</button>
+    <p class="sub" style="margin:6px 0 0;">Adds a plain placeholder screen — nothing is imported or embedded. Shape and size it however you like, then set the filename in its panel. On save, that filename is written into the scene as-is — put the matching video file in the same folder as the saved HTML for it to actually play.</p>
+  </section>
+
+  <section>
+    <label style="margin-top:0">Objects in scene</label>
+    <div id="objList"><div class="objItem" style="color:#8c7256; cursor:default;">No objects imported yet</div></div>
+    <button id="deleteBtn" class="danger">Delete Selected</button>
+  </section>
+
+  <section id="transformSection" style="display:none">
+    <label style="margin-top:0">Transform mode</label>
+    <div id="gizmoBtns">
+      <button id="modeMove" class="active">Move (W)</button>
+      <button id="modeRotate">Rotate (E)</button>
+      <button id="modeScale">Scale (R)</button>
+    </div>
+
+    <label>Position <span class="valTag" id="posTag"></span></label>
+    <div class="row3">
+      <div><input type="number" id="posX" step="0.05"></div>
+      <div><input type="number" id="posY" step="0.05"></div>
+      <div><input type="number" id="posZ" step="0.05"></div>
+    </div>
+
+    <label>Rotation (deg) <span class="valTag" id="rotTag"></span></label>
+    <div class="row3">
+      <div><input type="number" id="rotX" step="1"></div>
+      <div><input type="number" id="rotY" step="1"></div>
+      <div><input type="number" id="rotZ" step="1"></div>
+    </div>
+
+    <label>Uniform Scale <span class="valTag" id="scaleTag"></span></label>
+    <input type="range" id="scaleSlider" min="0.05" max="5" step="0.01" value="1">
+
+    <div id="brightnessRow">
+      <label>Object Brightness <span class="valTag" id="brightTag">1.0×</span></label>
+      <input type="range" id="brightSlider" min="0" max="3" step="0.05" value="1">
+    </div>
+
+    <div id="videoRow" style="display:none">
+      <label>Video filename <span class="valTag" style="font-weight:400; color:#8c7256;">(same folder as saved HTML)</span></label>
+      <input type="text" id="videoSrcInput" placeholder="video1.mp4" style="width:100%; box-sizing:border-box; background:#201811; color:#f0dcc0; border:1px solid #4a3320; border-radius:4px; padding:5px 6px; font-size:12px;">
+
+      <label style="margin-top:14px">Frame size (m)</label>
+      <div class="row3">
+        <div><input type="number" id="videoWidth" step="0.05" min="0.05"></div>
+        <div><input type="number" id="videoHeight" step="0.05" min="0.05"></div>
+      </div>
+
+      <label style="margin-top:14px">Video Volume <span class="valTag" id="volumeTag">100%</span></label>
+      <input type="range" id="volumeSlider" min="0" max="1" step="0.01" value="1">
+      <label style="margin-top:14px">Playback</label>
+      <div id="loopBtns" style="display:flex; gap:6px;">
+        <button id="loopOnBtn" class="active">Loop</button>
+        <button id="loopOffBtn">Play Once</button>
+      </div>
+    </div>
+
+    <label style="margin-top:14px">Collision</label>
+    <div id="collisionBtns" style="display:flex; gap:6px;">
+      <button id="solidBtn" class="active">Solid</button>
+      <button id="passBtn">Walk Through</button>
+    </div>
+  </section>
+
+  <section>
+    <label style="margin-top:0">Trigger Zones</label>
+    <p class="sub" style="margin-bottom:8px;">Place a circle on the floor. When the player steps inside, your text appears; pressing E opens htmlN.html from this folder.</p>
+    <button id="addTriggerBtn">+ Add Trigger Circle</button>
+    <div id="triggerList" style="margin-top:8px; border: 1px solid #45311d; border-radius: 4px; max-height: 110px; overflow-y:auto;">
+      <div class="objItem" style="color:#8c7256; cursor:default;">No triggers yet</div>
+    </div>
+  </section>
+
+  <section id="triggerEditSection" style="display:none">
+    <label style="margin-top:0">Trigger: <span id="triggerNameTag" style="color:#ffcf8f"></span></label>
+
+    <label>Radius <span class="valTag" id="triggerRadiusTag"></span></label>
+    <input type="range" id="triggerRadiusSlider" min="0.2" max="4" step="0.05" value="1">
+
+    <label>Position <span class="valTag"></span></label>
+    <div class="row3">
+      <div><input type="number" id="triggerPosX" step="0.05"></div>
+      <div><input type="number" id="triggerPosZ" step="0.05"></div>
+    </div>
+
+    <label>Prompt text (Comic Sans)</label>
+    <textarea id="triggerText" rows="2" style="width:100%; box-sizing:border-box; background:#201811; color:#f0dcc0; border:1px solid #4a3320; border-radius:4px; padding:6px; font-size:12px; resize:vertical;" placeholder="Press E to open..."></textarea>
+
+    <label>Opens file <span class="valTag" id="triggerFileTag"></span></label>
+    <p class="sub" style="margin:2px 0 8px;">Auto-assigned in save order: html1.html, html2.html, … Place these files in the same folder as this HTML.</p>
+
+    <button id="deleteTriggerBtn" class="danger">Delete Trigger</button>
+  </section>
+
+  <section>
+    <label style="margin-top:0">Save</label>
+    <p class="sub" style="margin-bottom:8px;">Downloads a new, self-contained HTML file with your current scene baked in — every imported model, its position, rotation, scale, brightness, collision setting, and trigger zone.</p>
+    <button id="saveBtn">Download Scene as HTML</button>
+    <p class="sub" id="saveStatus" style="margin:6px 0 0; display:none;"></p>
+  </section>
+</div>
+
+<!-- in-world trigger prompt (Comic Sans) -->
+<div id="triggerPrompt" style="
+  position:absolute; left:50%; bottom:14%; transform:translateX(-50%);
+  font-family:'Comic Sans MS','Comic Sans',cursive; font-size:20px; color:#fff;
+  background:rgba(20,14,9,0.7); padding:10px 18px; border-radius:10px;
+  border: 2px solid #ffcf8f; display:none; z-index:12; text-align:center; max-width:70vw;
+"></div>
+
+<!-- overlay window for opening htmlN.html, covers the entire screen -->
+<div id="triggerOverlay" style="
+  position:absolute; inset:0; display:none;
+  background:#1a1410; z-index:30;
+">
+  <button id="triggerOverlayClose" style="
+    position:absolute; top:14px; right:14px; z-index:31;
+    background:#3a2818; color:#f0dcc0; border:1px solid #6b4a2a; border-radius:5px;
+    padding:6px 14px; font-size:13px; cursor:pointer; font-family:sans-serif;
+  ">Exit (Esc)</button>
+  <iframe id="triggerOverlayFrame" style="position:absolute; inset:0; width:100%; height:100%; border:none; background:#fff;"></iframe>
+</div>
+
+<div id="videoPool" style="display:none"></div>
+
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.164.1/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xdedede);
+scene.fog = new THREE.Fog(0xdedede, 8, 18);
+
+const camera = new THREE.PerspectiveCamera(64, innerWidth/innerHeight, 0.05, 60);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+// A softly-lit studio environment (no visible geometry) so imported PBR
+// materials pick up realistic ambient reflections instead of looking
+// flat and matte under direct light alone — this is what gives glossy
+// or metal surfaces believable highlights.
+const pmremGenerator = new THREE.PMREMGenerator(renderer);
+scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
+
+// Studio-style 3-point lighting: a strong key light with soft shadows,
+// a gentle fill from the opposite side so shadows do not go pitch
+// black, and a rim light from behind to separate objects from the
+// walls. A soft hemisphere light replaces flat ambient so surfaces
+// still read a subtle top/bottom gradient instead of looking
+// uniformly lit.
+const key = new THREE.DirectionalLight(0xfff4e6, 2.4);
+key.position.set(-4, 8, 5);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.near = 0.5;
+key.shadow.camera.far = 24;
+key.shadow.camera.left = -6;
+key.shadow.camera.right = 6;
+key.shadow.camera.top = 6;
+key.shadow.camera.bottom = -6;
+key.shadow.bias = -0.0015;
+key.shadow.radius = 4;
+scene.add(key);
+
+const fill = new THREE.DirectionalLight(0xdce8ff, 0.6);
+fill.position.set(5, 4, -3);
+scene.add(fill);
+
+const rim = new THREE.DirectionalLight(0xffffff, 1.0);
+rim.position.set(0, 6, -6);
+scene.add(rim);
+
+const hemi = new THREE.HemisphereLight(0xf5f0e8, 0x33291c, 0.5);
+scene.add(hemi);
+
+const ROOM_HALF = 4.6;     // floor/ceiling span -ROOM_HALF..ROOM_HALF on x and z
+const WALL_HEIGHT = 3.6;
+const WALL_THICK = 0.25;
+const EDGE_COLOR = 0x111111;
+
+// thin black line meshes along a box's edges, so walls/ceiling read as "defined edges"
+function addEdges(mesh, color = EDGE_COLOR) {
+  const edgesGeo = new THREE.EdgesGeometry(mesh.geometry);
+  const line = new THREE.LineSegments(edgesGeo, new THREE.LineBasicMaterial({ color, linewidth: 2 }));
+  mesh.add(line);
+  return line;
+}
+
+/* ---------------------------------------------------------
+   WOODEN PLATFORM FLOOR — simple raised wood-toned slab.
+--------------------------------------------------------- */
+const PLATFORM_HEIGHT = 0.12;
+const platformMat = new THREE.MeshStandardMaterial({ color: 0x8a5a2f, roughness: 0.75, metalness: 0.05 });
+const floor = new THREE.Mesh(
+  new THREE.BoxGeometry(ROOM_HALF*2, PLATFORM_HEIGHT, ROOM_HALF*2),
+  platformMat
+);
+floor.position.set(0, PLATFORM_HEIGHT/2, 0);
+addEdges(floor);
+floor.receiveShadow = true;
+scene.add(floor);
+
+/* ---------------------------------------------------------
+   WALLS — flat white, 4 sides, with dark defined edges.
+--------------------------------------------------------- */
+const wallMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0.0 });
+
+const wallGroup = new THREE.Group();
+
+const backWall = new THREE.Mesh(
+  new THREE.BoxGeometry(ROOM_HALF*2 + WALL_THICK, WALL_HEIGHT, WALL_THICK),
+  wallMat
+);
+backWall.position.set(0, PLATFORM_HEIGHT + WALL_HEIGHT/2, -ROOM_HALF - WALL_THICK/2);
+addEdges(backWall);
+wallGroup.add(backWall);
+
+const leftWall = new THREE.Mesh(
+  new THREE.BoxGeometry(WALL_THICK, WALL_HEIGHT, ROOM_HALF*2 + WALL_THICK),
+  wallMat
+);
+leftWall.position.set(-ROOM_HALF - WALL_THICK/2, PLATFORM_HEIGHT + WALL_HEIGHT/2, 0);
+addEdges(leftWall);
+wallGroup.add(leftWall);
+
+const rightWall = new THREE.Mesh(
+  new THREE.BoxGeometry(WALL_THICK, WALL_HEIGHT, ROOM_HALF*2 + WALL_THICK),
+  wallMat
+);
+rightWall.position.set(ROOM_HALF + WALL_THICK/2, PLATFORM_HEIGHT + WALL_HEIGHT/2, 0);
+addEdges(rightWall);
+wallGroup.add(rightWall);
+
+const frontWall = new THREE.Mesh(
+  new THREE.BoxGeometry(ROOM_HALF*2 + WALL_THICK, WALL_HEIGHT, WALL_THICK),
+  wallMat
+);
+frontWall.position.set(0, PLATFORM_HEIGHT + WALL_HEIGHT/2, ROOM_HALF + WALL_THICK/2);
+addEdges(frontWall);
+wallGroup.add(frontWall);
+
+wallGroup.traverse(o => { if (o.isMesh) o.receiveShadow = true; });
+scene.add(wallGroup);
+
+/* ---------------------------------------------------------
+   CEILING — flat red, with defined edges.
+--------------------------------------------------------- */
+const ceilingMat = new THREE.MeshStandardMaterial({ color: 0xb02020, roughness: 0.85, metalness: 0.0 });
+const ceiling = new THREE.Mesh(
+  new THREE.BoxGeometry(ROOM_HALF*2 + WALL_THICK, WALL_THICK, ROOM_HALF*2 + WALL_THICK),
+  ceilingMat
+);
+ceiling.position.set(0, PLATFORM_HEIGHT + WALL_HEIGHT + WALL_THICK/2, 0);
+addEdges(ceiling);
+ceiling.receiveShadow = true;
+scene.add(ceiling);
+
+const obstacles = []; // wall footprints for player collision; imported "solid" objects add themselves here
+
+/* ---------------------------------------------------------
+   FIRST-PERSON PLAYER — the camera IS the player. Pointer-lock
+   mouse look (yaw/pitch) + WASD movement relative to facing
+   direction, with obstacle collision (empty in this version).
+--------------------------------------------------------- */
+const EYE_HEIGHT = 1.55;
+let yaw = 0;   // rotated 180 degrees to face the room
+let pitch = 0;
+const playerPos = new THREE.Vector3(0, EYE_HEIGHT, ROOM_HALF - 1.3);
+camera.position.copy(playerPos);
+
+let editorMode = false;
+const keys = {};
+
+renderer.domElement.addEventListener('click', () => {
+  if (editorMode) return; // clicks in editor mode are for object selection instead
+  renderer.domElement.requestPointerLock();
+});
+document.addEventListener('mousemove', e => {
+  if (editorMode) return;
+  if (document.pointerLockElement !== renderer.domElement) return;
+  yaw -= e.movementX * 0.0022;
+  pitch -= e.movementY * 0.0022;
+  pitch = Math.max(-1.3, Math.min(1.3, pitch));
+});
+
+addEventListener('keydown', e => {
+  // Prevent firing keyboard shortcuts when typing in input fields
+  if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
+  
+  keys[e.key.toLowerCase()] = true;
+  if (editorMode) {
+    if (e.key.toLowerCase() === 'w') setGizmoMode('translate');
+    if (e.key.toLowerCase() === 'e') setGizmoMode('rotate');
+    if (e.key.toLowerCase() === 'r') setGizmoMode('scale');
+  } else {
+    if (e.key.toLowerCase() === 'e') tryOpenActiveTrigger();
+    if (e.key === 'Escape') closeTriggerOverlay();
+  }
+});
+addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+const MARGIN = 0.35;
+const PLAYER_R = 0.28;
+function clampToRoom(v) {
+  return Math.max(-ROOM_HALF + MARGIN, Math.min(ROOM_HALF - MARGIN, v));
+}
+
+function hitsObstacle(x, z) {
+  for (const o of obstacles) {
+    if (Math.abs(x - o.x) < o.halfW + PLAYER_R && Math.abs(z - o.z) < o.halfD + PLAYER_R) return true;
+  }
+  // solid imported objects: check against their current world-space bounding box (XZ footprint)
+  for (const entry of importedObjects) {
+    if (!entry.solid) continue;
+    const box = new THREE.Box3().setFromObject(entry.root);
+    const halfW = (box.max.x - box.min.x) / 2 + PLAYER_R;
+    const halfD = (box.max.z - box.min.z) / 2 + PLAYER_R;
+    const cx = (box.max.x + box.min.x) / 2;
+    const cz = (box.max.z + box.min.z) / 2;
+    if (Math.abs(x - cx) < halfW && Math.abs(z - cz) < halfD) return true;
+  }
+  return false;
+}
+
+function updatePlayer(dt) {
+  const speed = 3.6 * dt;
+  // Apply minus signs to sync W/S correctly with the camera's view
+  const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+  
+  // Apply inverted signs to correctly map A/D to left/right
+  const strafe = new THREE.Vector3(-forward.z, 0, forward.x);
+  
+  const move = new THREE.Vector3();
+  if (keys['w']) move.add(forward);
+  if (keys['s']) move.sub(forward);
+  if (keys['d']) move.add(strafe);
+  if (keys['a']) move.sub(strafe);
+
+  if (move.lengthSq() > 0) {
+    move.normalize().multiplyScalar(speed);
+    const nx = playerPos.x + move.x;
+    const nz = playerPos.z + move.z;
+    if (!hitsObstacle(nx, nz)) {
+      playerPos.x = nx; playerPos.z = nz;
+    } else if (!hitsObstacle(nx, playerPos.z)) {
+      playerPos.x = nx;
+    } else if (!hitsObstacle(playerPos.x, nz)) {
+      playerPos.z = nz;
+    }
+  }
+  playerPos.x = clampToRoom(playerPos.x);
+  playerPos.z = clampToRoom(playerPos.z);
+}
+
+function updateCamera() {
+  camera.position.copy(playerPos);
+  camera.rotation.order = 'YXZ';
+  camera.rotation.y = yaw;
+  camera.rotation.x = pitch;
+}
+
+/* ===========================================================
+   EDITOR MODE — import GLB models, select, move/rotate/scale
+   with a transform gizmo, and adjust per-object brightness.
+=========================================================== */
+let orbitYaw = Math.PI;
+let orbitPitch = -0.25;
+let orbitDist = 4.5;
+const orbitTarget = new THREE.Vector3(0, 1, 0);
+let isOrbiting = false;
+let orbitEnabled = true;
+let lastMouse = { x: 0, y: 0 };
+
+function updateOrbitCamera() {
+  const x = orbitTarget.x + orbitDist * Math.cos(orbitPitch) * Math.sin(orbitYaw);
+  const y = orbitTarget.y + orbitDist * Math.sin(orbitPitch);
+  const z = orbitTarget.z + orbitDist * Math.cos(orbitPitch) * Math.cos(orbitYaw);
+  camera.position.set(x, y, z);
+  camera.lookAt(orbitTarget);
+}
+
+function updateEditorMovement(dt) {
+  // WASD pans the orbit target (and camera with it) in editor mode, relative
+  // to the current orbit yaw, so W always moves "into" the view.
+  const speed = 3.6 * dt;
+  const forward = new THREE.Vector3(-Math.sin(orbitYaw), 0, -Math.cos(orbitYaw));
+  const strafe = new THREE.Vector3(-forward.z, 0, forward.x);
+
+  const move = new THREE.Vector3();
+  if (keys['w']) move.add(forward);
+  if (keys['s']) move.sub(forward);
+  if (keys['d']) move.add(strafe);
+  if (keys['a']) move.sub(strafe);
+
+  if (move.lengthSq() > 0) {
+    move.normalize().multiplyScalar(speed);
+    orbitTarget.x += move.x;
+    orbitTarget.z += move.z;
+    const EDITOR_BOUNDS = ROOM_HALF + 6;
+    orbitTarget.x = Math.max(-EDITOR_BOUNDS, Math.min(EDITOR_BOUNDS, orbitTarget.x));
+    orbitTarget.z = Math.max(-EDITOR_BOUNDS, Math.min(EDITOR_BOUNDS, orbitTarget.z));
+  }
+}
+
+const loader = new GLTFLoader();
+const importedObjects = []; // { kind:'model'|'video', root, name, ... } — see importGLBFromArrayBuffer / buildVideoScreenEntry
+let selected = null;
+
+/* ---------------------------------------------------------
+   VIDEO SCREENS — in the editor these are just a plain
+   placeholder plane you can move/rotate/resize freely. No
+   video file is ever read, played, or embedded here — only
+   its filename is recorded. The real <video> playback only
+   happens in the saved/exported HTML, which loads that
+   filename from the same folder it's opened from.
+--------------------------------------------------------- */
+let videoFileCounter = 0;
+
+function applyVideoPlaceholderLabel(entry) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 288;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#16232b';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = '#3f6b7f';
+  ctx.lineWidth = 8;
+  ctx.strokeRect(4, 4, canvas.width - 8, canvas.height - 8);
+  ctx.fillStyle = '#7fd4ff';
+  ctx.font = 'bold 40px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('\u25B6', canvas.width / 2, canvas.height / 2 - 16);
+  ctx.font = '20px monospace';
+  ctx.fillStyle = '#bfe9ff';
+  ctx.fillText(entry.src || 'video.mp4', canvas.width / 2, canvas.height / 2 + 34);
+  if (entry.mat.map) entry.mat.map.dispose();
+  entry.mat.map = new THREE.CanvasTexture(canvas);
+  entry.mat.needsUpdate = true;
+}
+
+function buildVideoScreenEntry(src, fileIndex, opts = {}) {
+  const width = opts.width || 1.2;
+  const height = opts.height || 0.675;
+
+  const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, toneMapped: false });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), mat);
+
+  const root = new THREE.Group();
+  root.add(mesh);
+
+  const entry = {
+    kind: 'video',
+    root,
+    mesh,
+    mat,
+    src,
+    width,
+    height,
+    name: (opts.name || src || ('Video ' + fileIndex)).replace(/\.\w+$/i, ''),
+    fileIndex,
+    brightness: 1,
+    materials: [],
+    solid: opts.solid != null ? opts.solid : false, // a flat screen is walk-through by default
+    loop: opts.loop != null ? opts.loop : true,
+    volume: opts.volume != null ? opts.volume : 1
+  };
+  applyVideoPlaceholderLabel(entry);
+  return entry;
+}
+
+function addVideoScreen(src) {
+  videoFileCounter++;
+  const fileIndex = videoFileCounter;
+  const entry = buildVideoScreenEntry(src || ('video' + fileIndex + '.mp4'), fileIndex);
+
+  entry.root.position.set(orbitTarget.x, entry.height / 2, orbitTarget.z);
+  scene.add(entry.root);
+  importedObjects.push(entry);
+  refreshObjList();
+  selectObject(entry);
+}
+
+document.getElementById('addVideoBtn').addEventListener('click', () => addVideoScreen());
+
+const transformControls = new TransformControls(camera, renderer.domElement);
+transformControls.setMode('translate');
+scene.add(transformControls.getHelper ? transformControls.getHelper() : transformControls);
+transformControls.addEventListener('dragging-changed', e => {
+  orbitEnabled = !e.value;
+});
+transformControls.addEventListener('objectChange', () => {
+  if (selected) syncPanelFromObject(selected);
+});
+transformControls.enabled = false;
+transformControls.visible = false;
+
+function setGizmoMode(mode) {
+  transformControls.setMode(mode);
+  document.getElementById('modeMove').classList.toggle('active', mode === 'translate');
+  document.getElementById('modeRotate').classList.toggle('active', mode === 'rotate');
+  document.getElementById('modeScale').classList.toggle('active', mode === 'scale');
+}
+document.getElementById('modeMove').addEventListener('click', () => setGizmoMode('translate'));
+document.getElementById('modeRotate').addEventListener('click', () => setGizmoMode('rotate'));
+document.getElementById('modeScale').addEventListener('click', () => setGizmoMode('scale'));
+
+/* ===========================================================
+   TRIGGER ZONES — floor circles that show a Comic Sans prompt
+   when the player steps inside, and open htmlN.html (same
+   folder as this file) in a smaller overlay window when the
+   player presses E.
+=========================================================== */
+const triggers = []; // { id, mesh, radius, x, z, text, fileIndex }
+let selectedTrigger = null;
+let activeTrigger = null;   // the trigger the player is currently standing inside, if any
+let triggerFileCounter = 0; // next html file number to assign
+
+function makeTriggerMesh(radius) {
+  const geo = new THREE.RingGeometry(Math.max(radius - 0.04, 0.02), radius, 48);
+  const mat = new THREE.MeshBasicMaterial({ color: 0xffcf6a, side: THREE.DoubleSide, transparent: true, opacity: 0.85 });
+  const ring = new THREE.Mesh(geo, mat);
+  ring.rotation.x = -Math.PI / 2;
+  const fillGeo = new THREE.CircleGeometry(radius, 48);
+  const fillMat = new THREE.MeshBasicMaterial({ color: 0xffcf6a, side: THREE.DoubleSide, transparent: true, opacity: 0.15 });
+  const fill = new THREE.Mesh(fillGeo, fillMat);
+  fill.rotation.x = -Math.PI / 2;
+  fill.position.y = -0.001;
+  ring.add(fill);
+  return ring;
+}
+
+function addTrigger(x = 0, z = 0, radius = 1, text = 'Press E to open', fileIndex = null) {
+  triggerFileCounter++;
+  const entry = {
+    id: 'trigger_' + Date.now() + '_' + Math.floor(Math.random()*1000),
+    mesh: null,
+    radius,
+    x, z,
+    text,
+    fileIndex: fileIndex !== null ? fileIndex : triggerFileCounter
+  };
+  const mesh = makeTriggerMesh(radius);
+  mesh.position.set(x, PLATFORM_HEIGHT + 0.01, z);
+  mesh.visible = editorMode; // trigger circles are only ever visible while editing
+  scene.add(mesh);
+  entry.mesh = mesh;
+  triggers.push(entry);
+  refreshTriggerList();
+  selectTrigger(entry);
+  return entry;
+}
+
+function setTriggerMeshesVisible(visible) {
+  triggers.forEach(t => { t.mesh.visible = visible; });
+}
+
+function refreshTriggerList() {
+  const list = document.getElementById('triggerList');
+  list.innerHTML = '';
+  if (triggers.length === 0) {
+    list.innerHTML = '<div class="objItem" style="color:#8c7256; cursor:default;">No triggers yet</div>';
+    return;
+  }
+  triggers.forEach((t, i) => {
+    const div = document.createElement('div');
+    div.className = 'objItem' + (selectedTrigger === t ? ' selected' : '');
+    div.textContent = 'Trigger ' + (i + 1) + ' → html' + t.fileIndex + '.html';
+    div.addEventListener('click', () => selectTrigger(t));
+    list.appendChild(div);
+  });
+}
+
+function selectTrigger(t) {
+  selectedTrigger = t;
+  document.getElementById('triggerEditSection').style.display = 'block';
+  document.getElementById('triggerNameTag').textContent = 'html' + t.fileIndex + '.html';
+  document.getElementById('triggerRadiusSlider').value = t.radius;
+  document.getElementById('triggerRadiusTag').textContent = t.radius.toFixed(2) + 'm';
+  document.getElementById('triggerPosX').value = t.x.toFixed(2);
+  document.getElementById('triggerPosZ').value = t.z.toFixed(2);
+  document.getElementById('triggerText').value = t.text;
+  document.getElementById('triggerFileTag').textContent = 'html' + t.fileIndex + '.html';
+  refreshTriggerList();
+}
+
+function deselectTrigger() {
+  selectedTrigger = null;
+  document.getElementById('triggerEditSection').style.display = 'none';
+  refreshTriggerList();
+}
+
+document.getElementById('addTriggerBtn').addEventListener('click', () => {
+  addTrigger(orbitTarget.x, orbitTarget.z, 1, 'Press E to open');
+});
+
+document.getElementById('triggerRadiusSlider').addEventListener('input', e => {
+  if (!selectedTrigger) return;
+  const r = parseFloat(e.target.value);
+  selectedTrigger.radius = r;
+  document.getElementById('triggerRadiusTag').textContent = r.toFixed(2) + 'm';
+  const newMesh = makeTriggerMesh(r);
+  newMesh.position.copy(selectedTrigger.mesh.position);
+  scene.remove(selectedTrigger.mesh);
+  scene.add(newMesh);
+  selectedTrigger.mesh = newMesh;
+});
+
+['triggerPosX','triggerPosZ'].forEach((id, i) => {
+  document.getElementById(id).addEventListener('input', e => {
+    if (!selectedTrigger) return;
+    const v = parseFloat(e.target.value) || 0;
+    if (i === 0) selectedTrigger.x = v; else selectedTrigger.z = v;
+    selectedTrigger.mesh.position.set(selectedTrigger.x, PLATFORM_HEIGHT + 0.01, selectedTrigger.z);
+  });
+});
+
+document.getElementById('triggerText').addEventListener('input', e => {
+  if (!selectedTrigger) return;
+  selectedTrigger.text = e.target.value;
+});
+
+document.getElementById('deleteTriggerBtn').addEventListener('click', () => {
+  if (!selectedTrigger) return;
+  scene.remove(selectedTrigger.mesh);
+  const idx = triggers.indexOf(selectedTrigger);
+  if (idx >= 0) triggers.splice(idx, 1);
+  deselectTrigger();
+});
+
+
+/* ---------------- runtime: prompt + overlay in Walk Mode ---------------- */
+const triggerPromptEl = document.getElementById('triggerPrompt');
+const triggerOverlayEl = document.getElementById('triggerOverlay');
+const triggerOverlayFrame = document.getElementById('triggerOverlayFrame');
+let overlayOpen = false;
+
+function updateActiveTrigger() {
+  if (editorMode || overlayOpen) return;
+  let found = null;
+  for (const t of triggers) {
+    const dx = playerPos.x - t.x, dz = playerPos.z - t.z;
+    if (dx*dx + dz*dz <= t.radius * t.radius) { found = t; break; }
+  }
+  if (found !== activeTrigger) {
+    activeTrigger = found;
+    if (activeTrigger) {
+      triggerPromptEl.textContent = (activeTrigger.text || 'Press E to open') ;
+      triggerPromptEl.style.display = 'block';
+    } else {
+      triggerPromptEl.style.display = 'none';
+    }
+  }
+}
+
+function tryOpenActiveTrigger() {
+  if (!activeTrigger || overlayOpen) return;
+  openTriggerOverlay(activeTrigger);
+}
+
+function openTriggerOverlay(t) {
+  overlayOpen = true;
+  const filename = 'html' + t.fileIndex + '.html';
+  triggerOverlayFrame.src = filename;
+  triggerOverlayEl.style.display = 'block';
+  triggerPromptEl.style.display = 'none';
+  if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
+}
+
+function closeTriggerOverlay() {
+  if (!overlayOpen) return;
+  overlayOpen = false;
+  triggerOverlayEl.style.display = 'none';
+  triggerOverlayFrame.src = 'about:blank';
+}
+
+document.getElementById('triggerOverlayClose').addEventListener('click', closeTriggerOverlay);
+
+function refreshObjList() {
+  const list = document.getElementById('objList');
+  list.innerHTML = '';
+  if (importedObjects.length === 0) {
+    list.innerHTML = '<div class="objItem" style="color:#8c7256; cursor:default;">No objects imported yet</div>';
+    return;
+  }
+  importedObjects.forEach(entry => {
+    const div = document.createElement('div');
+    div.className = 'objItem' + (selected === entry ? ' selected' : '');
+    div.textContent = (entry.kind === 'video' ? '🎬 ' : '') + entry.name;
+    div.addEventListener('click', () => selectObject(entry));
+    list.appendChild(div);
+  });
+}
+
+function selectObject(entry) {
+  selected = entry;
+  transformControls.attach(entry.root);
+  transformControls.enabled = true;
+  transformControls.visible = true;
+  document.getElementById('transformSection').style.display = 'block';
+  syncPanelFromObject(entry);
+  refreshObjList();
+}
+
+function deselectObject() {
+  selected = null;
+  transformControls.detach();
+  transformControls.enabled = false;
+  transformControls.visible = false;
+  document.getElementById('transformSection').style.display = 'none';
+  refreshObjList();
+}
+
+function syncPanelFromObject(entry) {
+  const root = entry.root;
+  document.getElementById('posX').value = root.position.x.toFixed(2);
+  document.getElementById('posY').value = root.position.y.toFixed(2);
+  document.getElementById('posZ').value = root.position.z.toFixed(2);
+  document.getElementById('rotX').value = THREE.MathUtils.radToDeg(root.rotation.x).toFixed(1);
+  document.getElementById('rotY').value = THREE.MathUtils.radToDeg(root.rotation.y).toFixed(1);
+  document.getElementById('rotZ').value = THREE.MathUtils.radToDeg(root.rotation.z).toFixed(1);
+  document.getElementById('scaleSlider').value = root.scale.x;
+  document.getElementById('scaleTag').textContent = root.scale.x.toFixed(2) + '×';
+
+  const isVideo = entry.kind === 'video';
+  document.getElementById('brightnessRow').style.display = isVideo ? 'none' : 'block';
+  document.getElementById('videoRow').style.display = isVideo ? 'block' : 'none';
+  if (isVideo) {
+    document.getElementById('videoSrcInput').value = entry.src;
+    document.getElementById('videoWidth').value = entry.width.toFixed(2);
+    document.getElementById('videoHeight').value = entry.height.toFixed(2);
+    document.getElementById('volumeSlider').value = entry.volume;
+    document.getElementById('volumeTag').textContent = Math.round(entry.volume * 100) + '%';
+    document.getElementById('loopOnBtn').classList.toggle('active', entry.loop);
+    document.getElementById('loopOffBtn').classList.toggle('active', !entry.loop);
+  } else {
+    document.getElementById('brightSlider').value = entry.brightness;
+    document.getElementById('brightTag').textContent = entry.brightness.toFixed(2) + '×';
+  }
+
+  document.getElementById('solidBtn').classList.toggle('active', entry.solid);
+  document.getElementById('passBtn').classList.toggle('active', !entry.solid);
+}
+
+document.getElementById('videoSrcInput').addEventListener('input', e => {
+  if (!selected || selected.kind !== 'video') return;
+  selected.src = e.target.value.trim() || selected.src;
+  selected.name = selected.src.replace(/\.\w+$/i, '');
+  applyVideoPlaceholderLabel(selected);
+  refreshObjList();
+});
+['videoWidth', 'videoHeight'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => {
+    if (!selected || selected.kind !== 'video') return;
+    const w = Math.max(0.05, parseFloat(document.getElementById('videoWidth').value) || selected.width);
+    const h = Math.max(0.05, parseFloat(document.getElementById('videoHeight').value) || selected.height);
+    selected.width = w;
+    selected.height = h;
+    selected.mesh.geometry.dispose();
+    selected.mesh.geometry = new THREE.PlaneGeometry(w, h);
+  });
+});
+
+document.getElementById('volumeSlider').addEventListener('input', e => {
+  if (!selected || selected.kind !== 'video') return;
+  const v = parseFloat(e.target.value);
+  selected.volume = v;
+  document.getElementById('volumeTag').textContent = Math.round(v * 100) + '%';
+});
+document.getElementById('loopOnBtn').addEventListener('click', () => {
+  if (!selected || selected.kind !== 'video') return;
+  selected.loop = true;
+  document.getElementById('loopOnBtn').classList.add('active');
+  document.getElementById('loopOffBtn').classList.remove('active');
+});
+document.getElementById('loopOffBtn').addEventListener('click', () => {
+  if (!selected || selected.kind !== 'video') return;
+  selected.loop = false;
+  document.getElementById('loopOffBtn').classList.add('active');
+  document.getElementById('loopOnBtn').classList.remove('active');
+});
+
+document.getElementById('solidBtn').addEventListener('click', () => {
+  if (!selected) return;
+  selected.solid = true;
+  document.getElementById('solidBtn').classList.add('active');
+  document.getElementById('passBtn').classList.remove('active');
+});
+document.getElementById('passBtn').addEventListener('click', () => {
+  if (!selected) return;
+  selected.solid = false;
+  document.getElementById('passBtn').classList.add('active');
+  document.getElementById('solidBtn').classList.remove('active');
+});
+
+// numeric position/rotation inputs
+['posX','posY','posZ'].forEach((id, i) => {
+  document.getElementById(id).addEventListener('input', e => {
+    if (!selected) return;
+    const axis = ['x','y','z'][i];
+    selected.root.position[axis] = parseFloat(e.target.value) || 0;
+  });
+});
+['rotX','rotY','rotZ'].forEach((id, i) => {
+  document.getElementById(id).addEventListener('input', e => {
+    if (!selected) return;
+    const axis = ['x','y','z'][i];
+    selected.root.rotation[axis] = THREE.MathUtils.degToRad(parseFloat(e.target.value) || 0);
+  });
+});
+document.getElementById('scaleSlider').addEventListener('input', e => {
+  if (!selected) return;
+  const s = parseFloat(e.target.value);
+  selected.root.scale.setScalar(s);
+  document.getElementById('scaleTag').textContent = s.toFixed(2) + '×';
+});
+
+// object brightness: scales material color/emissive intensity, with tone mapping disabled
+// on that material so values above 1 actually read as brighter.
+document.getElementById('brightSlider').addEventListener('input', e => {
+  if (!selected) return;
+  const b = parseFloat(e.target.value);
+  selected.brightness = b;
+  document.getElementById('brightTag').textContent = b.toFixed(2) + '×';
+  applyBrightness(selected);
+});
+
+function applyBrightness(entry) {
+  entry.materials.forEach(({ mat, baseColor, baseEmissive, hasEmissive }) => {
+    if (mat.color) {
+      mat.color.setRGB(
+        Math.min(baseColor.r * entry.brightness, 4),
+        Math.min(baseColor.g * entry.brightness, 4),
+        Math.min(baseColor.b * entry.brightness, 4)
+      );
+    }
+    if (hasEmissive) {
+      mat.emissive.setRGB(
+        Math.min(baseEmissive.r * entry.brightness, 4),
+        Math.min(baseEmissive.g * entry.brightness, 4),
+        Math.min(baseEmissive.b * entry.brightness, 4)
+      );
+    }
+    mat.toneMapped = false;
+    mat.needsUpdate = true;
+  });
+}
+
+function importGLBFromArrayBuffer(arrayBuffer, name) {
+  loader.parse(arrayBuffer, '', gltf => {
+    const root = gltf.scene;
+
+    // normalize scale/position so it lands nicely in front of the camera
+    const box = new THREE.Box3().setFromObject(root);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const maxDim = Math.max(size.x, size.y, size.z) || 1;
+    const targetSize = 1.2;
+    const scaleFactor = targetSize / maxDim;
+    root.scale.setScalar(scaleFactor);
+
+    const center = new THREE.Vector3();
+    box.getCenter(center);
+    root.position.set(
+      orbitTarget.x - center.x * scaleFactor,
+      -box.min.y * scaleFactor,
+      orbitTarget.z - center.z * scaleFactor
+    );
+
+    const materials = [];
+    root.traverse(child => {
+      if (child.isMesh && child.material) {
+        const mats = Array.isArray(child.material) ? child.material : [child.material];
+        mats.forEach(mat => {
+          materials.push({
+            mat,
+            baseColor: mat.color ? mat.color.clone() : new THREE.Color(1,1,1),
+            baseEmissive: mat.emissive ? mat.emissive.clone() : new THREE.Color(0,0,0),
+            hasEmissive: !!mat.emissive
+          });
+        });
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+
+    const entry = {
+      kind: 'model',
+      root,
+      name: name.replace(/\.(glb|gltf)$/i, '') || 'Imported Object',
+      brightness: 1,
+      solid: true, // solid by default: player collides with it until switched to "Walk Through"
+      materials,
+      glbData: arrayBuffer // kept so "Save" can re-embed the original model bytes
+    };
+    scene.add(root);
+    importedObjects.push(entry);
+    refreshObjList();
+    selectObject(entry);
+  }, err => {
+    console.error('GLB load error:', err);
+    alert('Could not load that file. Please make sure it is a valid .glb or .gltf file.');
+  });
+}
+
+function importGLB(file) {
+  const reader = new FileReader();
+  reader.onload = () => importGLBFromArrayBuffer(reader.result, file.name);
+  reader.onerror = () => alert('Could not read that file.');
+  reader.readAsArrayBuffer(file);
+}
+
+document.getElementById('glbInput').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (file) importGLB(file);
+  e.target.value = '';
+});
+
+document.getElementById('deleteBtn').addEventListener('click', () => {
+  if (!selected) return;
+  scene.remove(selected.root);
+  const idx = importedObjects.indexOf(selected);
+  if (idx >= 0) importedObjects.splice(idx, 1);
+  deselectObject();
+});
+
+// drag & drop GLB or video files anywhere on the page
+const dropHint = document.getElementById('dropHint');
+addEventListener('dragover', e => {
+  if (!editorMode) return;
+  e.preventDefault();
+  dropHint.classList.add('show');
+});
+addEventListener('dragleave', () => {
+  dropHint.classList.remove('show');
+});
+addEventListener('drop', e => {
+  e.preventDefault();
+  dropHint.classList.remove('show');
+  if (!editorMode) return;
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  if (/\.(glb|gltf)$/i.test(file.name)) {
+    importGLB(file);
+  } else if (file.type.startsWith('video/') || /\.(mp4|webm|ogv|mov|m4v)$/i.test(file.name)) {
+    // only the filename is used — the video itself is never read or embedded
+    addVideoScreen(file.name);
+  } else {
+    alert('Please drop a .glb/.gltf model or a video file (.mp4, .webm, …).');
+  }
+});
+
+// click-to-select in editor mode (raycast against imported roots only);
+// dragging with no hit orbits the camera instead.
+const raycaster = new THREE.Raycaster();
+const mouseNdc = new THREE.Vector2();
+renderer.domElement.addEventListener('pointerdown', e => {
+  if (!editorMode) return;
+  if (e.button !== 0) return;
+  if (transformControls.dragging) return;
+  lastMouse.x = e.clientX;
+  lastMouse.y = e.clientY;
+  isOrbiting = true;
+});
+renderer.domElement.addEventListener('pointerup', e => {
+  if (!editorMode) return;
+  isOrbiting = false;
+  const dx = e.clientX - lastMouse.x, dy = e.clientY - lastMouse.y;
+  if (Math.hypot(dx, dy) > 4) return; // was a drag, not a click
+  if (transformControls.dragging) return;
+
+  mouseNdc.x = (e.clientX / innerWidth) * 2 - 1;
+  mouseNdc.y = -(e.clientY / innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouseNdc, camera);
+  const roots = importedObjects.map(o => o.root);
+  const triggerMeshes = triggers.map(t => t.mesh);
+  const hits = raycaster.intersectObjects([...roots, ...triggerMeshes], true);
+  if (hits.length > 0) {
+    let obj = hits[0].object;
+    while (obj.parent && !roots.includes(obj) && !triggerMeshes.includes(obj)) obj = obj.parent;
+    if (roots.includes(obj)) {
+      const entry = importedObjects.find(o => o.root === obj);
+      if (entry) { deselectTrigger(); selectObject(entry); }
+    } else if (triggerMeshes.includes(obj)) {
+      const t = triggers.find(tr => tr.mesh === obj);
+      if (t) { deselectObject(); selectTrigger(t); }
+    }
+  } else {
+    deselectObject();
+    deselectTrigger();
+  }
+});
+renderer.domElement.addEventListener('pointermove', e => {
+  if (!editorMode || !isOrbiting || !orbitEnabled) return;
+  const dx = e.clientX - lastMouse.x, dy = e.clientY - lastMouse.y;
+  lastMouse.x = e.clientX; lastMouse.y = e.clientY;
+  orbitYaw -= dx * 0.006;
+  orbitPitch = Math.max(-1.2, Math.min(1.2, orbitPitch - dy * 0.006));
+});
+renderer.domElement.addEventListener('wheel', e => {
+  if (!editorMode) return;
+  e.preventDefault();
+  orbitDist = Math.max(1.2, Math.min(12, orbitDist + e.deltaY * 0.003));
+}, { passive: false });
+
+/* ---------------- mode toggle ---------------- */
+const modeToggleBtn = document.getElementById('modeToggle');
+const editorPanel = document.getElementById('editorPanel');
+const hintEl = document.getElementById('hint');
+const editorHintEl = document.getElementById('editorHint');
+
+modeToggleBtn.addEventListener('click', () => {
+  editorMode = !editorMode;
+  if (editorMode) {
+    if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
+    modeToggleBtn.textContent = 'Exit Editor Mode';
+    editorPanel.classList.add('open');
+    hintEl.style.display = 'none';
+    editorHintEl.classList.add('show');
+    document.getElementById('crosshair').style.display = 'none';
+    orbitYaw = Math.PI; orbitPitch = -0.25; orbitDist = 4.5;
+    orbitTarget.set(0, 1, 0);
+    closeTriggerOverlay();
+    triggerPromptEl.style.display = 'none';
+    activeTrigger = null;
+    setTriggerMeshesVisible(true);
+  } else {
+    modeToggleBtn.textContent = 'Enter Editor Mode';
+    editorPanel.classList.remove('open');
+    hintEl.style.display = 'block';
+    editorHintEl.classList.remove('show');
+    document.getElementById('crosshair').style.display = 'block';
+    deselectObject();
+    deselectTrigger();
+    setTriggerMeshesVisible(false);
+  }
+});
+
+/* ===========================================================
+   SAVE SCENE — bake every imported model (as base64 GLB) plus
+   its transform/brightness/collision state into a copy of this
+   very HTML file, then trigger a browser download of it.
+=========================================================== */
+function arrayBufferToBase64(buffer) {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+const VIEWER_TEMPLATE = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Room</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #1a1410; font-family: 'Segoe UI', sans-serif; }
+  canvas { display: block; }
+  #hint { position: absolute; top: 12px; left: 12px; color: #f0dcc0; font-family: sans-serif; font-size: 12px; background: rgba(0,0,0,0.45); padding: 8px 12px; border-radius: 4px; }
+  #crosshair {
+    position: absolute; top: 50%; left: 50%; width: 6px; height: 6px;
+    margin: -3px 0 0 -3px; border-radius: 50%;
+    background: rgba(255,240,220,0.85); pointer-events: none;
+  }
+  #triggerPrompt {
+    position:absolute; left:50%; bottom:14%; transform:translateX(-50%);
+    font-family:'Comic Sans MS','Comic Sans',cursive; font-size:20px; color:#fff;
+    background:rgba(20,14,9,0.7); padding:10px 18px; border-radius:10px;
+    border: 2px solid #ffcf8f; display:none; z-index:12; text-align:center; max-width:70vw;
+  }
+  #triggerOverlay {
+    position:absolute; inset:0; display:none;
+    background:#1a1410; z-index:30;
+  }
+  #triggerOverlayClose {
+    position:absolute; top:14px; right:14px; z-index:31;
+    background:#3a2818; color:#f0dcc0; border:1px solid #6b4a2a; border-radius:5px;
+    padding:6px 14px; font-size:13px; cursor:pointer; font-family:sans-serif;
+  }
+  #triggerOverlayFrame { position:absolute; inset:0; width:100%; height:100%; border:none; background:#fff; }
+
+  /* ===================== JARVIS HUD ===================== */
+  #jarvisPanel {
+    position: absolute;
+    top: 50%;
+    left: -340px;
+    transform: translateY(-50%);
+    width: 300px;
+    max-height: 70vh;
+    background: linear-gradient(160deg, rgba(6,18,28,0.88), rgba(4,10,18,0.92));
+    border: 1px solid rgba(80,200,255,0.5);
+    border-radius: 10px;
+    box-shadow: 0 0 24px rgba(40,180,255,0.25), inset 0 0 30px rgba(0,140,255,0.06);
+    padding: 14px 16px 16px;
+    z-index: 50;
+    font-family: 'Consolas', 'Courier New', monospace;
+    color: #bfefff;
+    transition: left 0.5s cubic-bezier(.2,.8,.2,1), box-shadow 0.4s ease;
+    overflow: hidden;
+  }
+  #jarvisPanel.active {
+    left: 16px;
+    box-shadow: 0 0 34px rgba(60,200,255,0.45), inset 0 0 30px rgba(0,160,255,0.1);
+  }
+  #jarvisHeader {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(80,200,255,0.3);
+  }
+  #jarvisDot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: #2a5a70;
+    box-shadow: 0 0 6px rgba(60,200,255,0.4);
+    transition: background 0.3s, box-shadow 0.3s;
+    flex-shrink: 0;
+  }
+  #jarvisPanel.listening #jarvisDot {
+    background: #ff5555;
+    box-shadow: 0 0 10px rgba(255,80,80,0.8);
+    animation: jarvisPulse 1s infinite;
+  }
+  #jarvisPanel.active #jarvisDot {
+    background: #4de3ff;
+    box-shadow: 0 0 10px rgba(80,220,255,0.8);
+  }
+  @keyframes jarvisPulse {
+    0%,100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+  #jarvisTitle {
+    font-size: 13px;
+    letter-spacing: 0.12em;
+    font-weight: 600;
+    color: #7fe0ff;
+    text-shadow: 0 0 8px rgba(80,200,255,0.5);
+  }
+  #jarvisStatus {
+    font-size: 11px;
+    color: #6fa8c0;
+    letter-spacing: 0.03em;
+    margin-bottom: 10px;
+    min-height: 14px;
+  }
+  #jarvisQuestion {
+    font-size: 12px;
+    color: #8fd8ff;
+    opacity: 0.85;
+    margin-bottom: 8px;
+    font-style: italic;
+    line-height: 1.4;
+    min-height: 0;
+  }
+  #jarvisAnswer {
+    font-size: 13px;
+    color: #e4f9ff;
+    line-height: 1.5;
+    max-height: 45vh;
+    overflow-y: auto;
+    text-shadow: 0 0 6px rgba(80,200,255,0.15);
+  }
+  #jarvisAnswer::-webkit-scrollbar { width: 4px; }
+  #jarvisAnswer::-webkit-scrollbar-thumb { background: rgba(80,200,255,0.4); border-radius: 2px; }
+  /* =================== /JARVIS HUD ===================== */
+</style>
+</head>
+<body>
+
+<!-- ===================== JARVIS HUD ===================== -->
+<div id="jarvisPanel">
+  <div id="jarvisHeader">
+    <span id="jarvisDot"></span>
+    <span id="jarvisTitle">J.A.R.V.I.S.</span>
+  </div>
+  <div id="jarvisStatus">Say &ldquo;Hey Jarvis&rdquo; to activate</div>
+  <div id="jarvisQuestion"></div>
+  <div id="jarvisAnswer"></div>
+</div>
+<!-- =================== /JARVIS HUD ===================== -->
+
+<div id="hint">Click to look around &middot; WASD to move &middot; Esc to release mouse</div>
+<div id="crosshair"></div>
+
+<div id="triggerPrompt"></div>
+
+<div id="triggerOverlay">
+  <button id="triggerOverlayClose">Exit (Esc)</button>
+  <iframe id="triggerOverlayFrame"></iframe>
+</div>
+
+<div id="videoPool" style="display:none"></div>
+
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.164.1/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+} }
+<\/script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ===========================================================
+   This file is a self-contained, walk-only viewer. It has no
+   editor UI — it simply rebuilds the room and then loads the
+   scene data embedded near the closing tag as static,
+   already-placed objects and trigger zones.
+=========================================================== */
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xdedede);
+scene.fog = new THREE.Fog(0xdedede, 8, 18);
+
+const camera = new THREE.PerspectiveCamera(64, innerWidth/innerHeight, 0.05, 60);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+// A softly-lit studio environment (no visible geometry) so imported PBR
+// materials pick up realistic ambient reflections instead of looking
+// flat and matte under direct light alone — this is what gives glossy
+// or metal surfaces believable highlights.
+const pmremGenerator = new THREE.PMREMGenerator(renderer);
+scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
+
+// Studio-style 3-point lighting: a strong key light with soft shadows,
+// a gentle fill from the opposite side so shadows do not go pitch
+// black, and a rim light from behind to separate objects from the
+// walls. A soft hemisphere light replaces flat ambient so surfaces
+// still read a subtle top/bottom gradient instead of looking
+// uniformly lit.
+const key = new THREE.DirectionalLight(0xfff4e6, 2.4);
+key.position.set(-4, 8, 5);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.near = 0.5;
+key.shadow.camera.far = 24;
+key.shadow.camera.left = -6;
+key.shadow.camera.right = 6;
+key.shadow.camera.top = 6;
+key.shadow.camera.bottom = -6;
+key.shadow.bias = -0.0015;
+key.shadow.radius = 4;
+scene.add(key);
+
+const fill = new THREE.DirectionalLight(0xdce8ff, 0.6);
+fill.position.set(5, 4, -3);
+scene.add(fill);
+
+const rim = new THREE.DirectionalLight(0xffffff, 1.0);
+rim.position.set(0, 6, -6);
+scene.add(rim);
+
+const hemi = new THREE.HemisphereLight(0xf5f0e8, 0x33291c, 0.5);
+scene.add(hemi);
+
+const ROOM_HALF = 4.6;
+const WALL_HEIGHT = 3.6;
+const WALL_THICK = 0.25;
+const EDGE_COLOR = 0x111111;
+
+function addEdges(mesh, color = EDGE_COLOR) {
+  const edgesGeo = new THREE.EdgesGeometry(mesh.geometry);
+  const line = new THREE.LineSegments(edgesGeo, new THREE.LineBasicMaterial({ color, linewidth: 2 }));
+  mesh.add(line);
+  return line;
+}
+
+const PLATFORM_HEIGHT = 0.12;
+const platformMat = new THREE.MeshStandardMaterial({ color: 0x8a5a2f, roughness: 0.75, metalness: 0.05 });
+const floor = new THREE.Mesh(new THREE.BoxGeometry(ROOM_HALF*2, PLATFORM_HEIGHT, ROOM_HALF*2), platformMat);
+floor.position.set(0, PLATFORM_HEIGHT/2, 0);
+addEdges(floor);
+floor.receiveShadow = true;
+scene.add(floor);
+
+const wallMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0.0 });
+const wallGroup = new THREE.Group();
+
+const backWall = new THREE.Mesh(new THREE.BoxGeometry(ROOM_HALF*2 + WALL_THICK, WALL_HEIGHT, WALL_THICK), wallMat);
+backWall.position.set(0, PLATFORM_HEIGHT + WALL_HEIGHT/2, -ROOM_HALF - WALL_THICK/2);
+addEdges(backWall);
+wallGroup.add(backWall);
+
+const leftWall = new THREE.Mesh(new THREE.BoxGeometry(WALL_THICK, WALL_HEIGHT, ROOM_HALF*2 + WALL_THICK), wallMat);
+leftWall.position.set(-ROOM_HALF - WALL_THICK/2, PLATFORM_HEIGHT + WALL_HEIGHT/2, 0);
+addEdges(leftWall);
+wallGroup.add(leftWall);
+
+const rightWall = new THREE.Mesh(new THREE.BoxGeometry(WALL_THICK, WALL_HEIGHT, ROOM_HALF*2 + WALL_THICK), wallMat);
+rightWall.position.set(ROOM_HALF + WALL_THICK/2, PLATFORM_HEIGHT + WALL_HEIGHT/2, 0);
+addEdges(rightWall);
+wallGroup.add(rightWall);
+
+const frontWall = new THREE.Mesh(new THREE.BoxGeometry(ROOM_HALF*2 + WALL_THICK, WALL_HEIGHT, WALL_THICK), wallMat);
+frontWall.position.set(0, PLATFORM_HEIGHT + WALL_HEIGHT/2, ROOM_HALF + WALL_THICK/2);
+addEdges(frontWall);
+wallGroup.add(frontWall);
+
+wallGroup.traverse(o => { if (o.isMesh) o.receiveShadow = true; });
+scene.add(wallGroup);
+
+const ceilingMat = new THREE.MeshStandardMaterial({ color: 0xb02020, roughness: 0.85, metalness: 0.0 });
+const ceiling = new THREE.Mesh(new THREE.BoxGeometry(ROOM_HALF*2 + WALL_THICK, WALL_THICK, ROOM_HALF*2 + WALL_THICK), ceilingMat);
+ceiling.position.set(0, PLATFORM_HEIGHT + WALL_HEIGHT + WALL_THICK/2, 0);
+addEdges(ceiling);
+ceiling.receiveShadow = true;
+scene.add(ceiling);
+
+/* ---------------------------------------------------------
+   FIRST-PERSON PLAYER
+--------------------------------------------------------- */
+const EYE_HEIGHT = 1.55;
+let yaw = 0;
+let pitch = 0;
+const playerPos = new THREE.Vector3(0, EYE_HEIGHT, ROOM_HALF - 1.3);
+camera.position.copy(playerPos);
+
+renderer.domElement.addEventListener('click', () => {
+  unlockVideoAudio();
+  renderer.domElement.requestPointerLock();
+});
+document.addEventListener('mousemove', e => {
+  if (document.pointerLockElement !== renderer.domElement) return;
+  yaw -= e.movementX * 0.0022;
+  pitch -= e.movementY * 0.0022;
+  pitch = Math.max(-1.3, Math.min(1.3, pitch));
+});
+
+const keys = {};
+addEventListener('keydown', e => {
+  if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
+  keys[e.key.toLowerCase()] = true;
+  if (e.key.toLowerCase() === 'e') tryOpenActiveTrigger();
+  if (e.key === 'Escape') closeTriggerOverlay();
+});
+addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+const MARGIN = 0.35;
+const PLAYER_R = 0.28;
+function clampToRoom(v) {
+  return Math.max(-ROOM_HALF + MARGIN, Math.min(ROOM_HALF - MARGIN, v));
+}
+
+const importedObjects = []; // populated from embedded scene data below
+const videoPoolEl = document.getElementById('videoPool');
+let videoAudioUnlocked = false;
+function unlockVideoAudio() {
+  if (videoAudioUnlocked) return;
+  videoAudioUnlocked = true;
+  importedObjects.forEach(entry => {
+    if (entry.kind !== 'video' || !entry.videoEl) return;
+    entry.videoEl.muted = false;
+    entry.videoEl.volume = entry.volume;
+    entry.videoEl.play().catch(() => {});
+  });
+}
+
+function hitsObstacle(x, z) {
+  for (const entry of importedObjects) {
+    if (!entry.solid) continue;
+    const box = new THREE.Box3().setFromObject(entry.root);
+    const halfW = (box.max.x - box.min.x) / 2 + PLAYER_R;
+    const halfD = (box.max.z - box.min.z) / 2 + PLAYER_R;
+    const cx = (box.max.x + box.min.x) / 2;
+    const cz = (box.max.z + box.min.z) / 2;
+    if (Math.abs(x - cx) < halfW && Math.abs(z - cz) < halfD) return true;
+  }
+  return false;
+}
+
+function updatePlayer(dt) {
+  const speed = 3.6 * dt;
+  const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+  const strafe = new THREE.Vector3(-forward.z, 0, forward.x);
+  const move = new THREE.Vector3();
+  if (keys['w']) move.add(forward);
+  if (keys['s']) move.sub(forward);
+  if (keys['d']) move.add(strafe);
+  if (keys['a']) move.sub(strafe);
+
+  if (move.lengthSq() > 0) {
+    move.normalize().multiplyScalar(speed);
+    const nx = playerPos.x + move.x;
+    const nz = playerPos.z + move.z;
+    if (!hitsObstacle(nx, nz)) {
+      playerPos.x = nx; playerPos.z = nz;
+    } else if (!hitsObstacle(nx, playerPos.z)) {
+      playerPos.x = nx;
+    } else if (!hitsObstacle(playerPos.x, nz)) {
+      playerPos.z = nz;
+    }
+  }
+  playerPos.x = clampToRoom(playerPos.x);
+  playerPos.z = clampToRoom(playerPos.z);
+}
+
+function updateCamera() {
+  camera.position.copy(playerPos);
+  camera.rotation.order = 'YXZ';
+  camera.rotation.y = yaw;
+  camera.rotation.x = pitch;
+}
+
+/* ---------------------------------------------------------
+   TRIGGER ZONES (runtime only — no editor visuals here)
+--------------------------------------------------------- */
+const triggers = [];
+let activeTrigger = null;
+let overlayOpen = false;
+
+const triggerPromptEl = document.getElementById('triggerPrompt');
+const triggerOverlayEl = document.getElementById('triggerOverlay');
+const triggerOverlayFrame = document.getElementById('triggerOverlayFrame');
+
+function updateActiveTrigger() {
+  if (overlayOpen) return;
+  let found = null;
+  for (const t of triggers) {
+    const dx = playerPos.x - t.x, dz = playerPos.z - t.z;
+    if (dx*dx + dz*dz <= t.radius * t.radius) { found = t; break; }
+  }
+  if (found !== activeTrigger) {
+    activeTrigger = found;
+    if (activeTrigger) {
+      triggerPromptEl.textContent = activeTrigger.text || 'Press E to open';
+      triggerPromptEl.style.display = 'block';
+    } else {
+      triggerPromptEl.style.display = 'none';
+    }
+  }
+}
+
+function tryOpenActiveTrigger() {
+  if (!activeTrigger || overlayOpen) return;
+  overlayOpen = true;
+  const filename = 'html' + activeTrigger.fileIndex + '.html';
+  triggerOverlayFrame.src = filename;
+  triggerOverlayEl.style.display = 'block';
+  triggerPromptEl.style.display = 'none';
+  if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
+}
+
+function closeTriggerOverlay() {
+  if (!overlayOpen) return;
+  overlayOpen = false;
+  triggerOverlayEl.style.display = 'none';
+  triggerOverlayFrame.src = 'about:blank';
+}
+document.getElementById('triggerOverlayClose').addEventListener('click', closeTriggerOverlay);
+
+/* ---------------------------------------------------------
+   LOAD BAKED SCENE DATA
+--------------------------------------------------------- */
+const loader = new GLTFLoader();
+
+function arrayBufferFromBase64(b64) {
+  const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  return bytes.buffer;
+}
+
+function applyBrightness(entry) {
+  entry.materials.forEach(({ mat, baseColor, baseEmissive, hasEmissive }) => {
+    if (mat.color) {
+      mat.color.setRGB(
+        Math.min(baseColor.r * entry.brightness, 4),
+        Math.min(baseColor.g * entry.brightness, 4),
+        Math.min(baseColor.b * entry.brightness, 4)
+      );
+    }
+    if (hasEmissive) {
+      mat.emissive.setRGB(
+        Math.min(baseEmissive.r * entry.brightness, 4),
+        Math.min(baseEmissive.g * entry.brightness, 4),
+        Math.min(baseEmissive.b * entry.brightness, 4)
+      );
+    }
+    mat.toneMapped = false;
+    mat.needsUpdate = true;
+  });
+}
+
+function loadScene() {
+  const dataEl = document.getElementById('savedSceneData');
+  if (!dataEl) return;
+  let sceneData;
+  try {
+    sceneData = JSON.parse(dataEl.textContent);
+  } catch (e) {
+    console.error('Could not parse saved scene data:', e);
+    return;
+  }
+
+  const objectsData = sceneData.objects || [];
+  const triggersData = sceneData.triggers || [];
+
+  objectsData.forEach(item => {
+    const buffer = arrayBufferFromBase64(item.glbBase64);
+    loader.parse(buffer, '', gltf => {
+      const root = gltf.scene;
+      root.position.fromArray(item.position);
+      root.rotation.set(item.rotation[0], item.rotation[1], item.rotation[2]);
+      root.scale.setScalar(item.scale);
+
+      const materials = [];
+      root.traverse(child => {
+        if (child.isMesh && child.material) {
+          const mats = Array.isArray(child.material) ? child.material : [child.material];
+          mats.forEach(mat => {
+            materials.push({
+              mat,
+              baseColor: mat.color ? mat.color.clone() : new THREE.Color(1,1,1),
+              baseEmissive: mat.emissive ? mat.emissive.clone() : new THREE.Color(0,0,0),
+              hasEmissive: !!mat.emissive
+            });
+          });
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+
+      const entry = {
+        kind: 'model',
+        root,
+        brightness: item.brightness,
+        solid: item.solid,
+        materials
+      };
+      scene.add(root);
+      importedObjects.push(entry);
+      applyBrightness(entry);
+    }, err => console.error('Failed to load an object from the saved scene:', err));
+  });
+
+  const videosData = sceneData.videos || [];
+  videosData.forEach(item => {
+    if (!item.src) return;
+    const videoEl = document.createElement('video');
+    videoEl.src = item.src; // place this file next to the saved HTML
+    videoEl.loop = item.loop;
+    videoEl.muted = true;   // autoplay requires muted until the player clicks (see unlockVideoAudio)
+    videoEl.playsInline = true;
+    videoEl.autoplay = true;
+    videoPoolEl.appendChild(videoEl);
+
+    const texture = new THREE.VideoTexture(videoEl);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+
+    const width = item.width || 1.2;
+    const height = item.height || 0.675;
+    const mat = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide, toneMapped: false });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), mat);
+    const root = new THREE.Group();
+    root.add(mesh);
+    root.position.fromArray(item.position);
+    root.rotation.set(item.rotation[0], item.rotation[1], item.rotation[2]);
+    root.scale.setScalar(item.scale);
+
+    const entry = { kind: 'video', root, mesh, mat, texture, videoEl, solid: item.solid, loop: item.loop, volume: item.volume };
+    scene.add(root);
+    importedObjects.push(entry);
+    videoEl.play().catch(() => {});
+  });
+
+  triggersData.forEach(t => {
+    triggers.push({ x: t.x, z: t.z, radius: t.radius, text: t.text, fileIndex: t.fileIndex });
+    // trigger circles are never visible in the standalone viewer, only their effect is active
+  });
+}
+loadScene();
+
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  updatePlayer(dt);
+  updateCamera();
+  updateActiveTrigger();
+  renderer.render(scene, camera);
+}
+animate();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+renderer.setSize(innerWidth, innerHeight);
+});
+<\/script>
+
+<script>
+(function () {
+  const WAKE_PHRASES = ["hey jarvis", "hey, jarvis", "hey jarves", "a jarvis"];
+  const SLEEP_PHRASES = ["sleep jarvis", "jarvis sleep", "go to sleep jarvis", "goodbye jarvis"];
+
+  // ===================== BACKEND CONFIG =====================
+  // Point this at your proxy: http://localhost:3000/api/ask while testing
+  // locally with \`vercel dev\`, then your deployed URL once live, e.g.
+  // https://jarvis-backend-6i73vgc3v-aerdite.vercel.app/api/ask
+  const BACKEND_URL = "https://jarvis-backend-6i73vgc3v-aerdite.vercel.app/api/ask";
+
+  const jarvisKnowledgeBase = [
+    // { keywords: ["time"], answer: "I don't have a live clock wired up yet, sir." },
+  ];
+
+  function searchKnowledgeBase(question) {
+    const q = question.toLowerCase();
+    let best = null, bestScore = 0;
+    for (const entry of jarvisKnowledgeBase) {
+      const score = entry.keywords.filter(k => q.includes(k)).length;
+      if (score > bestScore) { bestScore = score; best = entry; }
+    }
+    return bestScore > 0 ? best.answer : null;
+  }
+
+  async function askBackend(question) {
+    try {
+      // text/plain avoids a CORS preflight (application/json does not
+      // qualify as a "simple" request, so the browser would otherwise
+      // send a separate OPTIONS request before every real POST here,
+      // doubling the number of requests that hit the backend).
+      const res = await fetch(BACKEND_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify({ question })
+      });
+
+      if (!res.ok) {
+        console.error('Backend responded with error status:', res.status);
+        return "I'm having trouble reaching my knowledge source right now, sir.";
+      }
+
+      const data = await res.json();
+      return data.answer || "I didn't get a usable answer back, sir.";
+    } catch (err) {
+      console.error('askBackend fetch failed:', err);
+      return "I can't reach the backend right now — is it running, sir?";
+    }
+  }
+
+  const panel = document.getElementById('jarvisPanel');
+  const statusEl = document.getElementById('jarvisStatus');
+  const questionEl = document.getElementById('jarvisQuestion');
+  const answerEl = document.getElementById('jarvisAnswer');
+
+  function setStatus(text) { statusEl.textContent = text; }
+
+  function openPanel() { panel.classList.add('active'); }
+  function closePanelAfterDelay(ms) {
+    setTimeout(() => {
+      panel.classList.remove('active');
+      questionEl.textContent = '';
+      answerEl.textContent = '';
+      setStatus('Say "Hey Jarvis" to activate');
+    }, ms);
+  }
+
+  let speaking = false;
+  function speak(text, onEnd) {
+    if (!window.speechSynthesis) { if (onEnd) onEnd(); return; }
+    speaking = true;
+    // Mute recognition's own onresult handling while we talk, but do NOT
+    // stop/abort/recreate the recognition object — on some browsers that
+    // is what re-triggers the permission prompt. We just ignore results
+    // that arrive while speaking (see recognition.onresult below).
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.rate = 1.02;
+    utter.pitch = 0.85;
+    const voices = window.speechSynthesis.getVoices();
+    const preferred = voices.find(v => /male|daniel|david|google uk english male/i.test(v.name));
+    if (preferred) utter.voice = preferred;
+    utter.onend = () => {
+      speaking = false;
+      if (onEnd) onEnd();
+    };
+    window.speechSynthesis.speak(utter);
+  }
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    if (panel) setStatus('Voice recognition not supported in this browser (use Chrome).');
+    return;
+  }
+
+  let mode = 'idle';
+  // A single, long-lived recognition instance, built on top of a single
+  // long-lived getUserMedia stream that we deliberately never stop.
+  // Recreating the recognition object, OR releasing the mic stream
+  // between uses, is what causes Chrome/Edge to re-check (and sometimes
+  // re-prompt for) microphone permission.
+  let recognition = null;
+  let recognitionActive = false; // true while a .start() session is actually live
+  let permissionDenied = false;
+  let micStream = null; // kept open for the whole page session on purpose
+
+  let lastRecognitionEventAt = Date.now();
+
+  function setupRecognition() {
+    const r = new SpeechRecognition();
+    r.lang = 'en-US';
+    r.continuous = true;       // keep one session running instead of restarting per phrase
+    r.interimResults = false;
+    r.maxAlternatives = 1;
+
+    r.onstart = () => {
+      recognitionActive = true;
+      lastRecognitionEventAt = Date.now();
+    };
+
+    r.onresult = (e) => {
+      lastRecognitionEventAt = Date.now();
+      if (speaking) return; // ignore anything heard while JARVIS itself is talking
+      const last = e.results[e.results.length - 1];
+      const heard = last[0].transcript.trim();
+      handleHeardText(heard);
+    };
+
+    r.onspeechstart = () => { lastRecognitionEventAt = Date.now(); };
+    r.onsoundstart = () => { lastRecognitionEventAt = Date.now(); };
+
+    r.onerror = (e) => {
+      if (e.error === 'not-allowed') {
+        // Real permission denial — nothing we do will recover this
+        // without the user re-granting access and reloading.
+        permissionDenied = true;
+        setStatus('Microphone access denied. Allow it in the address bar and reload.');
+      } else if (e.error !== 'no-speech' && e.error !== 'aborted') {
+        // 'service-not-allowed', 'network', etc. can be transient (e.g.
+        // after many restart cycles) and are NOT a real permission
+        // revocation — just log it and let onend's restart (and the
+        // watchdog below) bring the session back.
+        console.warn('JARVIS speech recognition error:', e.error);
+      }
+    };
+
+    // continuous mode can still end on its own (e.g. long silence, tab
+    // backgrounded). Restart the SAME instance's session rather than
+    // building a new object, to avoid re-triggering permission checks.
+    // A short delay avoids a tight start/end loop, which is what tends
+    // to make the browser re-surface the permission prompt.
+    r.onend = () => {
+      recognitionActive = false;
+      if (permissionDenied) return;
+      setTimeout(() => {
+        if (!recognitionActive && !permissionDenied) {
+          try { r.start(); } catch (err) { /* already running; ignore */ }
+        }
+      }, 250);
+    };
+
+    return r;
+  }
+
+  function startListening() {
+    if (permissionDenied) return;
+    if (!recognition) recognition = setupRecognition();
+    if (recognitionActive) return;
+    try {
+      recognition.start();
+    } catch (err) {
+      // already running — fine, we only need one active session
+    }
+  }
+
+  // Guards against the same spoken phrase being handled twice. In
+  // continuous mode, SpeechRecognition can occasionally fire onresult
+  // more than once for what is really a single utterance (e.g. an
+  // interim result that gets finalized, then a duplicate final result
+  // right after) — without this lock that could send the same question
+  // to the backend twice.
+  let processingQuestion = false;
+
+  function handleHeardText(text) {
+    const lower = text.toLowerCase();
+
+    if (mode === 'idle') {
+      const heardWake = WAKE_PHRASES.some(p => lower.includes(p));
+      if (heardWake) activateJarvis();
+      return;
+    }
+
+    if (mode === 'active') {
+      if (processingQuestion) return; // already handling the previous utterance
+
+      const heardSleep = SLEEP_PHRASES.some(p => lower.includes(p));
+      if (heardSleep) {
+        deactivateJarvis();
+        return;
+      }
+      panel.classList.remove('listening');
+      askQuestion(text);
+    }
+  }
+
+  const MAX_QUESTIONS_PER_SESSION = 4;
+  let questionCount = 0;
+
+  function activateJarvis() {
+    mode = 'active';
+    questionCount = 0;
+    openPanel();
+    setStatus('Yes, sir.');
+    questionEl.textContent = '';
+    answerEl.textContent = '';
+    speak('Yes sir', () => {
+      setStatus('Listening...');
+      panel.classList.add('listening');
+    });
+  }
+
+  function deactivateJarvis() {
+    mode = 'idle';
+    panel.classList.remove('listening');
+    setStatus('Going to sleep, sir.');
+    speak('Going to sleep', () => {
+      closePanelAfterDelay(800);
+    });
+  }
+
+  async function askQuestion(question) {
+    processingQuestion = true;
+    questionEl.textContent = '"' + question + '"';
+    setStatus('Processing...');
+
+    const local = searchKnowledgeBase(question);
+    let answer;
+    if (local) {
+      answer = local;
+    } else {
+      answer = await askBackend(question);
+    }
+
+    questionCount++;
+    answerEl.textContent = answer;
+    setStatus('Responding...');
+
+    const reachedLimit = questionCount >= MAX_QUESTIONS_PER_SESSION;
+
+    speak(answer, () => {
+      processingQuestion = false;
+      if (reachedLimit) {
+        // Auto-sleep after the configured number of questions in one
+        // wake session — say "hey jarvis" again to start a fresh batch.
+        deactivateJarvis();
+        return;
+      }
+      if (mode === 'active') {
+        setStatus('Listening...');
+        panel.classList.add('listening');
+      }
+    });
+  }
+
+  // Request mic access exactly once up front, and deliberately KEEP the
+  // stream open for the life of the page. This produces a single
+  // permission prompt. Stopping the stream's tracks here is what causes
+  // the browser to silently re-negotiate (and sometimes re-prompt for)
+  // mic access the next time SpeechRecognition starts.
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then(stream => {
+        micStream = stream; // intentionally not stopped
+        startListening();
+      })
+      .catch(err => {
+        setStatus('Microphone access denied. Allow it in the address bar and reload.');
+        console.warn('JARVIS mic permission error:', err);
+      });
+  } else {
+    startListening();
+  }
+
+  // Safety net #1: after many start/stop cycles, an occasional r.start()
+  // call can throw and get silently swallowed, leaving recognition
+  // stopped with nothing left to restart it. Periodically check and
+  // nudge it back to life if that ever happens.
+  //
+  // Safety net #2: some browsers can leave a recognition session in a
+  // "zombie" state — onstart fired (recognitionActive = true) but the
+  // engine has effectively stopped delivering events, without ever
+  // firing onend to trigger our normal restart path. If too long has
+  // passed since ANY recognition event, force a hard restart.
+  const ZOMBIE_TIMEOUT_MS = 12000;
+
+  setInterval(() => {
+    if (permissionDenied) return;
+
+    if (!recognitionActive) {
+      startListening();
+      return;
+    }
+
+    const idleFor = Date.now() - lastRecognitionEventAt;
+    if (idleFor > ZOMBIE_TIMEOUT_MS) {
+      console.warn('JARVIS: recognition looked idle for', idleFor, 'ms — forcing restart.');
+      try { recognition.abort(); } catch (err) { /* ignore */ }
+      recognitionActive = false;
+      setTimeout(startListening, 300);
+    }
+  }, 4000);
+})();
+<\/script>
+
+<script id="savedSceneData" type="application/json">SCENE_DATA_PLACEHOLDER<\/script>
+</body>
+</html>
+`;
+
+async function saveScene() {
+  const saveBtn = document.getElementById('saveBtn');
+  const statusEl = document.getElementById('saveStatus');
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Preparing download…';
+  statusEl.style.display = 'block';
+  const modelEntries = importedObjects.filter(e => e.kind !== 'video');
+  const videoEntries = importedObjects.filter(e => e.kind === 'video');
+  statusEl.textContent = 'Encoding ' + modelEntries.length + ' object(s), ' + videoEntries.length + ' video screen(s), and ' + triggers.length + ' trigger(s)…';
+
+  try {
+    const objectsData = modelEntries.map(entry => ({
+      name: entry.name,
+      position: entry.root.position.toArray(),
+      rotation: [entry.root.rotation.x, entry.root.rotation.y, entry.root.rotation.z],
+      scale: entry.root.scale.x,
+      brightness: entry.brightness,
+      solid: entry.solid,
+      glbBase64: arrayBufferToBase64(entry.glbData)
+    }));
+
+    const videosData = videoEntries.map(entry => ({
+      name: entry.name,
+      fileIndex: entry.fileIndex,
+      src: entry.src,
+      position: entry.root.position.toArray(),
+      rotation: [entry.root.rotation.x, entry.root.rotation.y, entry.root.rotation.z],
+      scale: entry.root.scale.x,
+      width: entry.width,
+      height: entry.height,
+      solid: entry.solid,
+      loop: entry.loop,
+      volume: entry.volume
+    }));
+
+    const triggersData = triggers.map(t => ({
+      x: t.x,
+      z: t.z,
+      radius: t.radius,
+      text: t.text,
+      fileIndex: t.fileIndex
+    }));
+
+    const sceneData = { objects: objectsData, videos: videosData, triggers: triggersData };
+
+    // Build a fresh, minimal, walk-only viewer from a fixed template rather than
+    // re-serializing this editor page — this avoids relying on fetch() (blocked
+    // on file:// origins in most browsers) and never carries any editor UI/state
+    // into the download. The download is always a clean, working, standalone file.
+    const html = VIEWER_TEMPLATE.replace(
+      'SCENE_DATA_PLACEHOLDER',
+      () => JSON.stringify(sceneData)
+    );
+
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'room-scene.html';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    const videoNote = videoEntries.length > 0
+      ? (' Also place ' + videoEntries.map(e => e.src).join(', ') + ' in that same folder for the video screen(s) to play.')
+      : '';
+    statusEl.textContent = 'Downloaded! Place html1.html, html2.html, etc. in the same folder as this file for triggers to work.' + videoNote;
+  } catch (err) {
+    console.error('Save failed:', err);
+    statusEl.textContent = 'Save failed — see console for details.';
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Download Scene as HTML';
+  }
+}
+document.getElementById('saveBtn').addEventListener('click', saveScene);
+
+// on startup, if this file was itself downloaded from a previous save, restore its scene
+(function loadEmbeddedScene() {
+  const dataEl = document.getElementById('savedSceneData');
+  if (!dataEl) return;
+  let sceneData;
+  try {
+    sceneData = JSON.parse(dataEl.textContent);
+  } catch (e) {
+    console.error('Could not parse saved scene data:', e);
+    return;
+  }
+
+  // backward-compat: older saves stored a bare array of objects with no triggers
+  const objectsData = Array.isArray(sceneData) ? sceneData : (sceneData.objects || []);
+  const triggersData = Array.isArray(sceneData) ? [] : (sceneData.triggers || []);
+
+  objectsData.forEach(item => {
+    const bytes = Uint8Array.from(atob(item.glbBase64), c => c.charCodeAt(0));
+    loader.parse(bytes.buffer, '', gltf => {
+      const root = gltf.scene;
+      root.position.fromArray(item.position);
+      root.rotation.set(item.rotation[0], item.rotation[1], item.rotation[2]);
+      root.scale.setScalar(item.scale);
+
+      const materials = [];
+      root.traverse(child => {
+        if (child.isMesh && child.material) {
+          const mats = Array.isArray(child.material) ? child.material : [child.material];
+          mats.forEach(mat => {
+            materials.push({
+              mat,
+              baseColor: mat.color ? mat.color.clone() : new THREE.Color(1,1,1),
+              baseEmissive: mat.emissive ? mat.emissive.clone() : new THREE.Color(0,0,0),
+              hasEmissive: !!mat.emissive
+            });
+          });
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+
+      const entry = {
+        kind: 'model',
+        root,
+        name: item.name,
+        brightness: item.brightness,
+        solid: item.solid,
+        materials,
+        glbData: bytes.buffer
+      };
+      scene.add(root);
+      importedObjects.push(entry);
+      applyBrightness(entry);
+      refreshObjList();
+    }, err => console.error('Failed to restore an object from saved scene:', err));
+  });
+
+  // restore video screens as placeholders — same as when created fresh, just
+  // reading back their filename, size, and transform
+  const videosData = Array.isArray(sceneData) ? [] : (sceneData.videos || []);
+  let maxVideoFileIndex = 0;
+  videosData.forEach(item => {
+    if (!item.src) return;
+    const entry = buildVideoScreenEntry(item.src, item.fileIndex, {
+      name: item.name, width: item.width, height: item.height,
+      solid: item.solid, loop: item.loop, volume: item.volume
+    });
+    entry.root.position.fromArray(item.position);
+    entry.root.rotation.set(item.rotation[0], item.rotation[1], item.rotation[2]);
+    entry.root.scale.setScalar(item.scale);
+    scene.add(entry.root);
+    importedObjects.push(entry);
+    refreshObjList();
+    maxVideoFileIndex = Math.max(maxVideoFileIndex, item.fileIndex);
+  });
+  videoFileCounter = maxVideoFileIndex;
+
+  // restore trigger zones, and make sure new triggers keep numbering upward
+  let maxFileIndex = 0;
+  triggersData.forEach(t => {
+    addTrigger(t.x, t.z, t.radius, t.text, t.fileIndex);
+    maxFileIndex = Math.max(maxFileIndex, t.fileIndex);
+  });
+  triggerFileCounter = maxFileIndex;
+  deselectTrigger();
+})();
+
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+
+  if (editorMode) {
+    updateEditorMovement(dt);
+    updateOrbitCamera();
+  } else {
+    updatePlayer(dt);
+    updateCamera();
+    updateActiveTrigger();
+  }
+  renderer.render(scene, camera);
+}
+animate();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+
+<script>
+(function () {
+  // ===================== JARVIS CONFIG =====================
+  const WAKE_PHRASES = ["hey jarvis", "hey, jarvis", "hey jarves", "a jarvis"];
+  const SLEEP_PHRASES = ["sleep jarvis", "jarvis sleep", "go to sleep jarvis", "goodbye jarvis"];
+
+  // ===================== BACKEND CONFIG =====================
+  // Point this at your proxy: http://localhost:3000/api/ask while testing
+  // locally with `vercel dev`, then your deployed URL once live, e.g.
+  // https://jarvis-backend-yourname.vercel.app/api/ask
+  const BACKEND_URL = "https://jarvis-backend-6i73vgc3v-aerdite.vercel.app/api/ask";
+
+  // Local knowledge base — edit freely. Simple keyword scoring for now.
+  const jarvisKnowledgeBase = [
+    // { keywords: ["time"], answer: "I don't have a live clock wired up yet, sir." },
+  ];
+
+  function searchKnowledgeBase(question) {
+    const q = question.toLowerCase();
+    let best = null, bestScore = 0;
+    for (const entry of jarvisKnowledgeBase) {
+      const score = entry.keywords.filter(k => q.includes(k)).length;
+      if (score > bestScore) { bestScore = score; best = entry; }
+    }
+    return bestScore > 0 ? best.answer : null;
+  }
+
+  async function askBackend(question) {
+    try {
+      // text/plain avoids a CORS preflight (application/json does not
+      // qualify as a "simple" request, so the browser would otherwise
+      // send a separate OPTIONS request before every real POST here,
+      // doubling the number of requests that hit the backend).
+      const res = await fetch(BACKEND_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify({ question })
+      });
+
+      if (!res.ok) {
+        console.error('Backend responded with error status:', res.status);
+        return "I'm having trouble reaching my knowledge source right now, sir.";
+      }
+
+      const data = await res.json();
+      return data.answer || "I didn't get a usable answer back, sir.";
+    } catch (err) {
+      console.error('askBackend fetch failed:', err);
+      return "Thor landed on the server, sir. Can't fetch data.";
+    }
+  }
+
+  // ===================== HUD ELEMENTS =====================
+  const panel = document.getElementById('jarvisPanel');
+  const statusEl = document.getElementById('jarvisStatus');
+  const questionEl = document.getElementById('jarvisQuestion');
+  const answerEl = document.getElementById('jarvisAnswer');
+
+  function setStatus(text) { statusEl.textContent = text; }
+
+  function openPanel() {
+    panel.classList.add('active');
+  }
+  function closePanelAfterDelay(ms) {
+    setTimeout(() => {
+      panel.classList.remove('active');
+      questionEl.textContent = '';
+      answerEl.textContent = '';
+      setStatus('Say "Hey Jarvis" to activate');
+    }, ms);
+  }
+
+  // ===================== SPEECH SYNTHESIS =====================
+  let speaking = false;
+  function speak(text, onEnd) {
+    if (!window.speechSynthesis) { if (onEnd) onEnd(); return; }
+    speaking = true;
+    // Mute recognition's own onresult handling while we talk, but do NOT
+    // stop/abort/recreate the recognition object — on some browsers that
+    // is what re-triggers the permission prompt. We just ignore results
+    // that arrive while speaking (see recognition.onresult below).
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.rate = 1.02;
+    utter.pitch = 0.85;
+    const voices = window.speechSynthesis.getVoices();
+    const preferred = voices.find(v => /male|daniel|david|google uk english male/i.test(v.name));
+    if (preferred) utter.voice = preferred;
+    utter.onend = () => {
+      speaking = false;
+      if (onEnd) onEnd();
+    };
+    window.speechSynthesis.speak(utter);
+  }
+
+  // ===================== SPEECH RECOGNITION =====================
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    if (panel) setStatus('Voice recognition not supported in this browser (use Chrome).');
+    return;
+  }
+
+  let mode = 'idle'; // 'idle' (listening for wake word) | 'active' (listening for question)
+  // A single, long-lived recognition instance, built on top of a single
+  // long-lived getUserMedia stream that we deliberately never stop.
+  // Recreating the recognition object, OR releasing the mic stream
+  // between uses, is what causes Chrome/Edge to re-check (and sometimes
+  // re-prompt for) microphone permission.
+  let recognition = null;
+  let recognitionActive = false; // true while a .start() session is actually live
+  let permissionDenied = false;
+  let micStream = null; // kept open for the whole page session on purpose
+
+  let lastRecognitionEventAt = Date.now();
+
+  function setupRecognition() {
+    const r = new SpeechRecognition();
+    r.lang = 'en-US';
+    r.continuous = true;       // keep one session running instead of restarting per phrase
+    r.interimResults = false;
+    r.maxAlternatives = 1;
+
+    r.onstart = () => {
+      recognitionActive = true;
+      lastRecognitionEventAt = Date.now();
+    };
+
+    r.onresult = (e) => {
+      lastRecognitionEventAt = Date.now();
+      if (speaking) return; // ignore anything heard while JARVIS itself is talking
+      const last = e.results[e.results.length - 1];
+      const heard = last[0].transcript.trim();
+      handleHeardText(heard);
+    };
+
+    r.onspeechstart = () => { lastRecognitionEventAt = Date.now(); };
+    r.onsoundstart = () => { lastRecognitionEventAt = Date.now(); };
+
+    r.onerror = (e) => {
+      if (e.error === 'not-allowed') {
+        // Real permission denial — nothing we do will recover this
+        // without the user re-granting access and reloading.
+        permissionDenied = true;
+        setStatus('Microphone access denied. Allow it in the address bar and reload.');
+      } else if (e.error !== 'no-speech' && e.error !== 'aborted') {
+        // 'service-not-allowed', 'network', etc. can be transient (e.g.
+        // after many restart cycles) and are NOT a real permission
+        // revocation — just log it and let onend's restart (and the
+        // watchdog below) bring the session back.
+        console.warn('JARVIS speech recognition error:', e.error);
+      }
+    };
+
+    // continuous mode can still end on its own (e.g. long silence, tab
+    // backgrounded). Restart the SAME instance's session rather than
+    // building a new object, to avoid re-triggering permission checks.
+    // A short delay avoids a tight start/end loop, which is what tends
+    // to make the browser re-surface the permission prompt.
+    r.onend = () => {
+      recognitionActive = false;
+      if (permissionDenied) return;
+      setTimeout(() => {
+        if (!recognitionActive && !permissionDenied) {
+          try { r.start(); } catch (err) { /* already running; ignore */ }
+        }
+      }, 250);
+    };
+
+    return r;
+  }
+
+  function startListening() {
+    if (permissionDenied) return;
+    if (!recognition) recognition = setupRecognition();
+    if (recognitionActive) {
+      if (mode === 'active') panel.classList.add('listening');
+      return;
+    }
+    try {
+      recognition.start();
+      if (mode === 'active') panel.classList.add('listening');
+    } catch (err) {
+      // start() can throw if called while already running; ignore.
+    }
+  }
+
+  // Guards against the same spoken phrase being handled twice. In
+  // continuous mode, SpeechRecognition can occasionally fire onresult
+  // more than once for what is really a single utterance (e.g. an
+  // interim result that gets finalized, then a duplicate final result
+  // right after) — without this lock that could send the same question
+  // to the backend twice.
+  let processingQuestion = false;
+
+  function handleHeardText(text) {
+    const lower = text.toLowerCase();
+
+    if (mode === 'idle') {
+      const heardWake = WAKE_PHRASES.some(p => lower.includes(p));
+      if (heardWake) activateJarvis();
+      return;
+    }
+
+    if (mode === 'active') {
+      if (processingQuestion) return; // already handling the previous utterance
+
+      const heardSleep = SLEEP_PHRASES.some(p => lower.includes(p));
+      if (heardSleep) {
+        deactivateJarvis();
+        return;
+      }
+      panel.classList.remove('listening');
+      askQuestion(text);
+    }
+  }
+
+  const MAX_QUESTIONS_PER_SESSION = 4;
+  let questionCount = 0;
+
+  function activateJarvis() {
+    mode = 'active';
+    questionCount = 0;
+    openPanel();
+    setStatus('Yes, sir.');
+    questionEl.textContent = '';
+    answerEl.textContent = '';
+    speak('Yes sir', () => {
+      setStatus('Listening...');
+      panel.classList.add('listening');
+    });
+  }
+
+  function deactivateJarvis() {
+    mode = 'idle';
+    panel.classList.remove('listening');
+    setStatus('Going to sleep, sir.');
+    speak('Going to sleep', () => {
+      closePanelAfterDelay(800);
+    });
+  }
+
+  async function askQuestion(question) {
+    processingQuestion = true;
+    questionEl.textContent = '"' + question + '"';
+    setStatus('Processing...');
+
+    const local = searchKnowledgeBase(question);
+    let answer;
+    if (local) {
+      answer = local;
+    } else {
+      answer = await askBackend(question);
+    }
+
+    questionCount++;
+    answerEl.textContent = answer;
+    setStatus('Responding...');
+
+    const reachedLimit = questionCount >= MAX_QUESTIONS_PER_SESSION;
+
+    speak(answer, () => {
+      processingQuestion = false;
+      if (reachedLimit) {
+        // Auto-sleep after the configured number of questions in one
+        // wake session — say "hey jarvis" again to start a fresh batch.
+        deactivateJarvis();
+        return;
+      }
+      if (mode === 'active') {
+        setStatus('Listening...');
+        panel.classList.add('listening');
+      }
+    });
+  }
+
+  // Request mic access exactly once up front, and deliberately KEEP the
+  // stream open for the life of the page. This produces a single
+  // permission prompt. Stopping the stream's tracks here is what causes
+  // the browser to silently re-negotiate (and sometimes re-prompt for)
+  // mic access the next time SpeechRecognition starts.
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then(stream => {
+        micStream = stream; // intentionally not stopped
+        startListening();
+      })
+      .catch(err => {
+        setStatus('Microphone access denied. Allow it in the address bar and reload.');
+        console.warn('JARVIS mic permission error:', err);
+      });
+  } else {
+    startListening();
+  }
+
+  // Safety net #1: after many start/stop cycles, an occasional r.start()
+  // call can throw and get silently swallowed, leaving recognition
+  // stopped with nothing left to restart it. Periodically check and
+  // nudge it back to life if that ever happens.
+  //
+  // Safety net #2: some browsers can leave a recognition session in a
+  // "zombie" state — onstart fired (recognitionActive = true) but the
+  // engine has effectively stopped delivering events, without ever
+  // firing onend to trigger our normal restart path. If too long has
+  // passed since ANY recognition event, force a hard restart.
+  const ZOMBIE_TIMEOUT_MS = 12000;
+
+  setInterval(() => {
+    if (permissionDenied) return;
+
+    if (!recognitionActive) {
+      startListening();
+      return;
+    }
+
+    const idleFor = Date.now() - lastRecognitionEventAt;
+    if (idleFor > ZOMBIE_TIMEOUT_MS) {
+      console.warn('JARVIS: recognition looked idle for', idleFor, 'ms — forcing restart.');
+      try { recognition.abort(); } catch (err) { /* ignore */ }
+      recognitionActive = false;
+      setTimeout(startListening, 300);
+    }
+  }, 4000);
+})();
+</script>
+</body>
+</html>
